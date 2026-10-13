@@ -1,6 +1,6 @@
 cask "easypad" do
-  version "1.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  version "1.1"
+  sha256 "819d879ddd2e7d39fb6213b2027bd515b99ce4068c4dcfa89e3eced7546a69b3"
 
   url "https://github.com/dmnkx/homebrew-easypad/releases/download/v#{version}/EasyPad.zip"
   name "EasyPad"
