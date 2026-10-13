@@ -21,12 +21,50 @@ func runForm(_ title: String, _ fields: [(String, NSTextField)], ok: String) -> 
     return alert.runModal() == .alertFirstButtonReturn
 }
 
-/// One tab: formatting toolbar, text view, status bar.
-final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMenuItemValidation {
+/// The tabs of one window. Each tab is its own NSWindow and only the selected one is on screen,
+/// so the tab strip can sit in the title bar like Notepad's (macOS window tabs always add a row below it).
+final class TabGroup {
+    var tabs: [EditorWindowController] = []
+    var closing: [EditorWindowController] = []
+    var shown: EditorWindowController? { tabs.first { $0.window?.isVisible == true } }
+}
+
+/// A filled bar: the tab strip itself, or one tab on it (top corners rounded, bottom flush with the menu row).
+private final class TabView: NSStackView {
+    var fill = NSColor.clear
+    var radius: CGFloat = 0
+    /// Left unpainted, so the selected tab shows the very backdrop the menu row has; no painted color matches it in every window state.
+    weak var cutout: TabView?
+
+    private func shape(_ frame: NSRect, _ radius: CGFloat) -> NSBezierPath {
+        NSBezierPath(roundedRect: NSRect(x: frame.minX, y: frame.minY - radius, width: frame.width, height: frame.height + radius), xRadius: radius, yRadius: radius)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = shape(bounds, radius)
+        if let cutout { path.append(shape(cutout.frame, cutout.radius)) }
+        path.windingRule = .evenOdd
+        fill.setFill()
+        path.fill()
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true   // the cutout follows the tab as it moves
+    }
+}
+
+/// One tab: tab strip, formatting toolbar, text view, status bar.
+final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMenuItemValidation, NSWindowDelegate {
+    /// The tab new documents join.
+    static weak var active: EditorWindowController?
+    private(set) var group = TabGroup()
+    private let tabStrip = TabView()
     let textView: NSTextView
     let scrollView = NSScrollView()
     let toolbar = NSStackView()
     let statusBar = NSStackView()
+    private var formatControls: [NSView] = []
     private let position = statusLabel(), characters = statusLabel(), mode = statusLabel()
     private let zoomLabel = statusLabel(), lineEnding = statusLabel(), encoding = statusLabel()
 
@@ -57,9 +95,16 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
         textView = NSTextView(frame: .zero, textContainer: container)
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: true)
         super.init(window: window)
-        window.tabbingIdentifier = "Notepad"
+        group.tabs = [self]
+        window.delegate = self
+        window.tabbingMode = .disallowed
+        window.animationBehavior = .none   // switching tabs swaps windows; the open/close zoom would show
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbar = NSToolbar()   // empty, only there to make the title bar tall enough for roomy tabs
+        window.toolbarStyle = .unifiedCompact
         window.isRestorable = false   // Session restores tabs, including unsaved text
         window.center()
         window.setFrameAutosaveName("Editor")
@@ -67,7 +112,7 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.autoresizingMask = [.width]
-        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.textContainerInset = NSSize(width: 12, height: 10)
         textView.allowsUndo = true
         textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
@@ -86,14 +131,18 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
         scrollView.contentView.postsFrameChangedNotifications = true
 
         buildToolbar()
-        statusBar.edgeInsets = NSEdgeInsets(top: 3, left: 10, bottom: 3, right: 10)
-        statusBar.spacing = 18
+        statusBar.edgeInsets = NSEdgeInsets(top: 7, left: 16, bottom: 7, right: 16)
+        statusBar.spacing = 24
         statusBar.distribution = .gravityAreas
         statusBar.setHuggingPriority(.defaultHigh, for: .vertical)
         for view in [position, characters] { statusBar.addView(view, in: .leading) }
         for view in [mode, zoomLabel, lineEnding, encoding] { statusBar.addView(view, in: .trailing) }
 
-        let root = NSStackView(views: [toolbar, scrollView, statusBar])
+        tabStrip.edgeInsets = NSEdgeInsets(top: 0, left: 78, bottom: 0, right: 8)   // clears the close/minimize/zoom buttons
+        tabStrip.spacing = 2
+        tabStrip.alignment = .bottom
+        tabStrip.fill = NSColor.black.withAlphaComponent(0.1)   // darker than the menu row, so the selected tab reads as part of it
+        let root = NSStackView(views: [tabStrip, toolbar, scrollView, statusBar])
         root.orientation = .vertical
         root.distribution = .fill
         root.spacing = 0
@@ -102,6 +151,7 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
             view.trailingAnchor.constraint(equalTo: root.trailingAnchor).isActive = true
         }
         window.contentView = root
+        if let guide = window.contentLayoutGuide as? NSLayoutGuide { tabStrip.bottomAnchor.constraint(equalTo: guide.topAnchor).isActive = true }
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(settingsChanged), name: UserDefaults.didChangeNotification, object: nil)
@@ -112,29 +162,43 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func buildToolbar() {
+        // menu row text and icons are 1.2 times the system size
+        let size = NSFont.systemFontSize * 1.2
+        func icon(_ symbol: String) -> NSImage {
+            symbolImage(symbol).withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: .regular)) ?? symbolImage(symbol)
+        }
         func button(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
-            let button = NSButton(image: symbolImage(symbol), target: nil, action: action)
-            button.bezelStyle = .texturedRounded
+            let button = NSButton(image: icon(symbol), target: nil, action: action)
+            button.isBordered = false
             button.toolTip = tip
             button.setAccessibilityLabel(tip)
             return button
         }
         func pullDown(_ symbol: String, _ tip: String, _ items: [NSMenuItem]) -> NSPopUpButton {
             let popup = NSPopUpButton(frame: .zero, pullsDown: true)
-            popup.bezelStyle = .texturedRounded
+            popup.isBordered = false
             let face = NSMenuItem()
-            face.image = symbolImage(symbol)
+            face.title = ""
+            face.image = icon(symbol)
             popup.menu?.addItem(face)
             items.forEach { popup.menu?.addItem($0) }
             popup.toolTip = tip
             popup.setAccessibilityLabel(tip)
             return popup
         }
-        toolbar.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-        toolbar.spacing = 6
+        toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        toolbar.spacing = 16
         toolbar.distribution = .gravityAreas
         toolbar.setHuggingPriority(.defaultHigh, for: .vertical)
-        for view in [
+        // Notepad keeps File/Edit/View inside the window; these open the same menus as the menu bar
+        for (index, title) in [L("File"), L("Edit"), L("View")].enumerated() {
+            let menu = NSButton(title: title, target: self, action: #selector(showMainMenu(_:)))
+            menu.isBordered = false
+            menu.font = .systemFont(ofSize: size)
+            menu.tag = index + 1
+            toolbar.addView(menu, in: .leading)
+        }
+        formatControls = [
             pullDown("textformat.size", L("Headings"), headingItems()),
             pullDown("list.bullet", L("Lists"), listItems()),
             button("bold", L("Bold"), #selector(toggleBold(_:))),
@@ -144,7 +208,13 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
             pullDown("tablecells", L("Table"), tableItems()),
             pullDown("photo", L("Image"), imageItems()),
             button("eraser", L("Clear formatting"), #selector(clearFormatting(_:))),
-        ] as [NSView] { toolbar.addView(view, in: .leading) }
+        ]
+        formatControls.forEach { toolbar.addView($0, in: .leading) }
+        toolbar.addView(button("gearshape", L("Settings"), #selector(AppDelegate.showSettings(_:))), in: .trailing)
+    }
+
+    @objc private func showMainMenu(_ sender: NSButton) {
+        NSApp.mainMenu?.item(at: sender.tag)?.submenu?.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
     // MARK: Content
@@ -198,7 +268,8 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
     }
 
     func applySettings() {
-        toolbar.isHidden = !Settings.formatting
+        guard doc != nil else { return }   // the settings tab has no editor to configure
+        formatControls.forEach { $0.isHidden = !Settings.formatting }
         statusBar.isHidden = !Settings.statusBar
         if !Settings.formatting && formatted { setFormatted(false) }
         let font = Settings.font
@@ -322,16 +393,162 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
 
     // MARK: Tabs
 
-    private var tabs: [NSWindow] { window?.tabbedWindows ?? [window].compactMap { $0 } }
+    /// Turns this tab into the settings page; it has no document.
+    func showSettings() {
+        guard let window, let root = window.contentView as? NSStackView else { return }
+        [toolbar, scrollView, statusBar].forEach { $0.isHidden = true }
+        let page = SettingsView(), scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.documentView = page
+        root.addArrangedSubview(scroll)
+        page.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            page.topAnchor.constraint(equalTo: scroll.contentView.topAnchor), page.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+        ])
+        window.title = L("Settings")
+        window.makeFirstResponder(nil)
+    }
 
-    @objc func closeWindowTabs(_ sender: Any?) { tabs.forEach { $0.performClose(sender) } }
-    @objc func closeOtherTabs(_ sender: Any?) { tabs.filter { $0 != window }.forEach { $0.performClose(sender) } }
+    func join(_ other: EditorWindowController) {
+        group = other.group
+        group.tabs.append(self)
+    }
+
+    /// Shows this tab in place of the one its window was showing.
+    func select() {
+        guard let window else { return }
+        let others = group.tabs.filter { $0 !== self }
+        if let shown = others.first(where: { $0.window?.isVisible == true })?.window { window.setFrame(shown.frame, display: false) }
+        rebuildTabs()
+        window.isExcludedFromWindowsMenu = false
+        window.makeKeyAndOrderFront(nil)
+        for other in others {
+            other.window?.isExcludedFromWindowsMenu = true
+            other.window?.orderOut(nil)
+        }
+        Self.active = self
+    }
+
+    override func showWindow(_ sender: Any?) { select() }
+    func windowDidBecomeKey(_ notification: Notification) { Self.active = self }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window, let index = group.tabs.firstIndex(of: self) else { return }
+        group.tabs.remove(at: index)
+        if Self.active === self { Self.active = nil }
+        guard window.isVisible, !group.tabs.isEmpty else { group.shown?.rebuildTabs(); return }
+        let next = group.tabs[min(index, group.tabs.count - 1)]
+        next.window?.setFrame(window.frame, display: false)
+        next.select()
+    }
+
+    override func setDocumentEdited(_ dirtyFlag: Bool) {
+        let changed = dirtyFlag != window?.isDocumentEdited
+        super.setDocumentEdited(dirtyFlag)
+        if changed { group.shown?.rebuildTabs() }
+    }
+
+    override func synchronizeWindowTitleWithDocumentName() {
+        super.synchronizeWindowTitleWithDocumentName()
+        group.shown?.rebuildTabs()
+    }
+
+    // shortcut: tabs shrink but never scroll and cannot be dragged, add both if people keep dozens of tabs open
+    func rebuildTabs() {
+        tabStrip.views.forEach { tabStrip.removeView($0) }
+        var first: NSView?, firstTitle: NSView?
+        for tab in group.tabs {
+            let title = NSButton(title: tab.doc?.displayName ?? L("Settings"), target: tab, action: #selector(selectTab(_:)))
+            title.isBordered = false
+            title.alignment = .left
+            title.contentTintColor = .labelColor
+            title.lineBreakMode = .byTruncatingTail
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            // like Notepad, a dot replaces the close mark while the tab has unsaved changes
+            let close = NSButton(image: symbolImage(tab.doc?.isDocumentEdited == true ? "circle.fill" : "xmark"), target: tab, action: #selector(closeTab(_:)))
+            close.isBordered = false
+            close.controlSize = .small
+            close.setContentHuggingPriority(.required, for: .horizontal)   // or the dot stretches and drifts off the tab's right edge
+            close.setAccessibilityLabel(L("Close tab"))
+            let view = TabView(views: [title, close])
+            view.distribution = .fill
+            view.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 12)
+            view.radius = 8
+            view.clipsToBounds = true
+            if tab === self { tabStrip.cutout = view }
+            view.alphaValue = tab === self ? 1 : 0.55
+            view.menu = NSMenu()
+            for (name, action) in [("New tab", #selector(newTab(_:))), ("Close tab", #selector(closeTab(_:))),
+                                   ("Close other tabs", #selector(closeOtherTabs(_:))), ("Close tabs to the right", #selector(closeTabsToRight(_:)))] {
+                view.menu?.addItem(menuItem(L(name), action, target: tab))
+            }
+            tabStrip.addView(view, in: .leading)
+            let width = view.widthAnchor.constraint(equalToConstant: 200)
+            width.priority = .defaultLow
+            NSLayoutConstraint.activate([width, view.widthAnchor.constraint(lessThanOrEqualToConstant: 200)])
+            if let first { view.widthAnchor.constraint(equalTo: first.widthAnchor).isActive = true }
+            first = first ?? view
+            firstTitle = firstTitle ?? title
+        }
+        let add = NSButton(image: symbolImage("plus"), target: self, action: #selector(newTab(_:)))
+        add.isBordered = false
+        add.toolTip = L("New tab")
+        add.setAccessibilityLabel(L("New tab"))
+        let addTab = TabView(views: [add])   // same insets and height as a tab, so the plus sits level with the titles
+        addTab.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 4)
+        add.setContentHuggingPriority(.defaultLow, for: .vertical)
+        tabStrip.addView(addTab, in: .leading)
+        if let firstTitle { add.heightAnchor.constraint(equalTo: firstTitle.heightAnchor).isActive = true }
+    }
+
+    @objc private func selectTab(_ sender: Any?) { select() }
+    @objc private func newTab(_ sender: Any?) { NSDocumentController.shared.newDocument(sender) }
+    @objc private func closeTab(_ sender: Any?) { close(tabs: [self]) }
+
+    @objc func cycleTab(_ sender: NSMenuItem) {
+        guard let index = group.tabs.firstIndex(of: self) else { return }
+        group.tabs[(index + sender.tag + group.tabs.count) % group.tabs.count].select()
+    }
+
+    /// Closes tabs one at a time, bringing each unsaved one forward so its save question is visible.
+    private func close(tabs: [EditorWindowController]) {
+        group.closing = tabs
+        closeNext()
+    }
+
+    private func closeNext() {
+        guard let next = group.closing.first else { return }
+        group.closing.removeFirst()
+        guard let document = next.doc else {   // the settings tab: nothing to save
+            next.close()
+            return closeNext()
+        }
+        if document.isDocumentEdited { next.select() }
+        document.canClose(withDelegate: self, shouldClose: #selector(document(_:shouldClose:contextInfo:)), contextInfo: nil)
+    }
+
+    @objc private func document(_ document: NSDocument, shouldClose: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        guard shouldClose else { return group.closing = [] }
+        document.close()
+        closeNext()
+    }
+
+    private var others: [EditorWindowController] { group.tabs.filter { $0 !== self } }
+
+    @objc func closeWindowTabs(_ sender: Any?) { close(tabs: others + [self]) }
+    @objc func closeOtherTabs(_ sender: Any?) { close(tabs: others) }
     @objc func closeTabsToRight(_ sender: Any?) {
-        guard let window, let index = tabs.firstIndex(of: window) else { return }
-        tabs[(index + 1)...].forEach { $0.performClose(sender) }
+        guard let index = group.tabs.firstIndex(of: self) else { return }
+        close(tabs: Array(group.tabs[(index + 1)...]))
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // the settings tab has no text, so only the tab commands apply to it
+        if doc == nil { return [#selector(cycleTab(_:)), #selector(closeWindowTabs(_:)), #selector(closeOtherTabs(_:)), #selector(closeTabsToRight(_:))].contains(item.action) }
         switch item.action {
         case #selector(toggleWordWrap(_:)):
             item.state = Settings.wordWrap ? .on : .off
@@ -350,7 +567,7 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
         case #selector(toggleTaskCheck(_:)):
             return formatted && [.task, .taskDone].contains(currentListKind())
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleStrikethrough(_:)), #selector(insertLink(_:)),
-             #selector(clearFormatting(_:)), #selector(setHeading(_:)), #selector(setList(_:)), #selector(insertTable(_:)), #selector(insertImage(_:)):
+             #selector(clearFormatting(_:)), #selector(setHeading(_:)), #selector(setList(_:)), #selector(insertMarkdownTable(_:)), #selector(insertImage(_:)):
             return Settings.formatting
         default:
             break

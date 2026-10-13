@@ -4,7 +4,21 @@ import UniformTypeIdentifiers
 // Menu items shared by the formatting toolbar and the Format menu.
 func headingItems() -> [NSMenuItem] {
     ["Title", "Subtitle", "Heading", "Subheading", "Section", "Subsection", "Body"].enumerated().map {
-        menuItem(L($0.element), #selector(EditorWindowController.setHeading(_:)), tag: $0.offset < 6 ? $0.offset + 1 : 0)
+        let level = $0.offset < 6 ? $0.offset + 1 : 0
+        let item = menuItem(L($0.element), #selector(EditorWindowController.setHeading(_:)), tag: level)
+        // the names alone are hard to tell apart, so each is drawn at its own size and shows the Markdown it stands for in a second column
+        let column = NSMutableParagraphStyle()
+        column.tabStops = [NSTextTab(textAlignment: .left, location: 110)]
+        let menuFont = NSFont.menuFont(ofSize: 0)
+        let title = NSMutableAttributedString(string: item.title, attributes: [.font: level > 0 ? headingFont(level, menuFont) : menuFont, .paragraphStyle: column])
+        if level > 0 {
+            title.append(NSAttributedString(string: "\t" + String(repeating: "#", count: level), attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: column,
+            ]))
+        }
+        item.attributedTitle = title
+        return item
     }
 }
 
@@ -18,9 +32,79 @@ func listItems() -> [NSMenuItem] {
 }
 
 func tableItems() -> [NSMenuItem] {
-    let insert: [NSMenuItem] = [menuItem(L("Insert table"), #selector(EditorWindowController.insertTable(_:))), NSMenuItem.separator()]
+    // the grid picks a size with the mouse, as in Notepad; the dialog item stays for the keyboard and VoiceOver
+    let grid = NSMenuItem()
+    grid.view = TableGridPicker()
+    let insert: [NSMenuItem] = [grid, menuItem(L("Insert table") + "...", #selector(EditorWindowController.insertMarkdownTable(_:))), NSMenuItem.separator()]
     return insert + ["Row above", "Row below", "Column left", "Column right", "Delete row", "Delete column", "Delete table"].enumerated().map {
         menuItem(L($0.element), #selector(EditorWindowController.tableOperation(_:)), tag: $0.offset)
+    }
+}
+
+/// The table menu's size picker: sweep over the squares, click to insert that many rows and columns.
+final class TableGridPicker: NSView {
+    private let rows = 8, columns = 10, cell: CGFloat = 18, gap: CGFloat = 3, margin: CGFloat = 14, top: CGFloat = 8
+    private(set) var picked = (rows: 0, columns: 0)
+    private let label = NSTextField(labelWithString: "")
+
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        let pitch = cell + gap
+        frame.size = NSSize(width: 2 * margin + CGFloat(columns) * pitch - gap, height: top + CGFloat(rows) * pitch + 26)
+        label.frame = NSRect(x: margin, y: frame.height - 24, width: frame.width - 2 * margin, height: 18)
+        label.textColor = .secondaryLabelColor
+        addSubview(label)
+        pick(0, 0)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    private func pick(_ rows: Int, _ columns: Int) {
+        picked = (rows, columns)
+        label.stringValue = rows > 0 ? "\(rows) × \(columns)" : L("Insert table")
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        // .activeAlways: a menu is not a key window, so the other activation modes never fire in it
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        func count(_ offset: CGFloat, _ limit: Int) -> Int { min(max(Int(offset / (cell + gap)) + 1, 1), limit) }
+        pick(count(point.y - top, rows), count(point.x - margin, columns))
+    }
+
+    override func mouseExited(with event: NSEvent) { pick(0, 0) }
+
+    override func mouseUp(with event: NSEvent) {
+        mouseMoved(with: event)   // a click that arrives without a preceding move still picks the square under it
+        guard picked.rows > 0, var menu = enclosingMenuItem?.menu else { return }
+        while let parent = menu.supermenu { menu = parent }
+        menu.cancelTracking()
+        // once the menu has closed, the command goes to the editor through the responder chain
+        DispatchQueue.main.async { NSApp.sendAction(#selector(EditorWindowController.insertPickedTable(_:)), to: nil, from: self) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let square = NSRect(x: margin + CGFloat(column) * (cell + gap), y: top + CGFloat(row) * (cell + gap), width: cell, height: cell)
+                let path = NSBezierPath(roundedRect: square.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3)
+                if row < picked.rows && column < picked.columns {
+                    NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
+                    path.fill()
+                    NSColor.controlAccentColor.setStroke()
+                } else {
+                    NSColor.tertiaryLabelColor.setStroke()
+                }
+                path.stroke()
+            }
+        }
     }
 }
 
@@ -215,7 +299,7 @@ extension EditorWindowController {
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.image]
             guard panel.runModal() == .OK, let url = panel.url else { return }
-            // shortcut: the image is referenced where it is, Notepad copies it into "<name>_Images"; copy it if documents must be portable
+            // an image outside the document's folder keeps its full path until the next save copies it, see gatherImages
             let folder = doc?.fileURL?.deletingLastPathComponent().path
             let path = folder.map { url.path.hasPrefix($0 + "/") ? String(url.path.dropFirst($0.count + 1)) : url.path } ?? url.path
             source = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
@@ -224,6 +308,36 @@ extension EditorWindowController {
         var attrs = textView.typingAttributes
         attrs[.link] = nil
         replace(textView.selectedRange(), with: imageString(alt: "", src: source, attrs, doc?.fileURL))
+    }
+
+    /// Before a save: copies images from outside the document's folder into "<name>_Images" beside it and points
+    /// the document at the copies, as Notepad does, so the document and its images can be moved together.
+    func gatherImages(for url: URL) {
+        guard formatted else { return }   // in the syntax view paths are the user's own text and stay as typed
+        let files = FileManager.default, folder = url.deletingLastPathComponent()
+        let images = folder.appendingPathComponent(url.deletingPathExtension().lastPathComponent + "_Images")
+        var moved: [(NSRange, String)] = []
+        storage.enumerateAttribute(.mdImage, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let source = value as? String, source.hasPrefix("/"), let path = source.removingPercentEncoding,
+                  !path.hasPrefix(folder.path + "/") else { return }
+            let original = URL(fileURLWithPath: path)
+            var copy = images.appendingPathComponent(original.lastPathComponent), number = 1
+            // a different picture with the same name gets a numbered name; the same picture is reused
+            while files.fileExists(atPath: copy.path), !files.contentsEqual(atPath: copy.path, andPath: path) {
+                number += 1
+                copy = images.appendingPathComponent("\(original.deletingPathExtension().lastPathComponent)-\(number)")
+                    .appendingPathExtension(original.pathExtension)
+            }
+            do {
+                try files.createDirectory(at: images, withIntermediateDirectories: true)
+                if !files.fileExists(atPath: copy.path) { try files.copyItem(at: original, to: copy) }
+            } catch {
+                return   // the original path still works, so the document is left pointing at it
+            }
+            let relative = images.lastPathComponent + "/" + copy.lastPathComponent
+            moved.append((range, relative.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relative))
+        }
+        for (range, source) in moved { storage.addAttribute(.mdImage, value: source, range: range) }
     }
 
     // MARK: Tables
@@ -261,13 +375,24 @@ extension EditorWindowController {
         return TableContext(range: NSRange(location: start, length: end - start), cells: cells, row: here.startingRow, column: here.startingColumn)
     }
 
-    @objc func insertTable(_ sender: Any?) {
+    // not "insertTable": NSTextView answers that name itself and, being first responder, would swallow the command
+    @objc func insertMarkdownTable(_ sender: Any?) {
         guard ensureFormatted() else { return }
         let rows = NSTextField(string: "3"), columns = NSTextField(string: "3")
         guard runForm(L("Insert table"), [(L("Number of rows"), rows), (L("Number of columns"), columns)], ok: L("Insert")) else { return }
+        insertTable(rows: rows.integerValue, columns: columns.integerValue)
+    }
+
+    /// The size came from the table menu's grid.
+    @objc func insertPickedTable(_ sender: TableGridPicker) {
+        guard ensureFormatted() else { return }
+        insertTable(rows: sender.picked.rows, columns: sender.picked.columns)
+    }
+
+    private func insertTable(rows: Int, columns: Int) {
         let empty = NSAttributedString(string: "", attributes: bodyAttrs)
-        let row = Array(repeating: empty, count: min(max(columns.integerValue, 1), 20))
-        let table = renderTable(Array(repeating: row, count: min(max(rows.integerValue, 1), 100)), bodyAttrs)
+        let row = Array(repeating: empty, count: min(max(columns, 1), 20))
+        let table = renderTable(Array(repeating: row, count: min(max(rows, 1), 100)), bodyAttrs)
         let selection = textView.selectedRange()
         // a table starts on its own line
         if selection.location > 0, (storage.string as NSString).character(at: selection.location - 1) != 10 {

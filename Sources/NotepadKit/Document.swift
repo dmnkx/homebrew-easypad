@@ -21,13 +21,16 @@ final class Document: NSDocument {
     override func makeWindowControllers() {
         isMarkdown = isMarkdown || fileType == Document.markdown
         let controller = EditorWindowController()
-        addWindowController(controller)
-        controller.load()
         // "New window" and the "open files in a new window" setting keep this tab out of the current window
         let own = (NSDocumentController.shared as? DocumentController)?.opensNewWindow == true || (fileURL != nil && Settings.opensInNewWindow)
-        guard let window = controller.window else { return }
-        window.tabbingMode = own ? .disallowed : .preferred
-        if own { DispatchQueue.main.async { window.tabbingMode = .preferred } }
+        if !own, let active = EditorWindowController.active { controller.join(active) }
+        addWindowController(controller)
+        controller.load()
+    }
+
+    override var displayName: String! {
+        get { fileURL == nil ? L("Untitled") : super.displayName }
+        set { super.displayName = newValue }
     }
 
     // MARK: Reading and writing
@@ -58,6 +61,7 @@ final class Document: NSDocument {
             file.encoding = TextEncoding(rawValue: popup.indexOfSelectedItem) ?? file.encoding
             encodingPopup = nil
         }
+        if typeName == Document.markdown { editor?.gatherImages(for: url) }
         super.save(to: url, ofType: typeName, for: saveOperation) { error in
             if error == nil {
                 self.isMarkdown = self.isMarkdown || typeName == Document.markdown
@@ -186,7 +190,7 @@ final class Document: NSDocument {
         guard let text = item.text else { return }
         file = TextFile(text: text, encoding: item.encoding, lineEnding: item.lineEnding)
         isMarkdown = item.markdown
-        if isMarkdown && fileURL == nil { fileType = Document.markdown }
+        if fileURL == nil { fileType = isMarkdown ? Document.markdown : Document.plain }   // untitled tabs start as Markdown
         editor?.load(formatted: item.formatted)
         updateChangeCount(.changeDone)
     }
@@ -212,7 +216,7 @@ final class PrintView: NSTextView {
 final class DocumentController: NSDocumentController {
     var opensNewWindow = false
 
-    override var defaultType: String? { Document.plain }
+    override var defaultType: String? { Document.markdown }
     override func documentClass(forType typeName: String) -> AnyClass? { Document.self }
 
     override func typeForContents(of url: URL) throws -> String {
@@ -237,8 +241,8 @@ final class DocumentController: NSDocumentController {
         opensNewWindow = false
     }
 
-    @objc func newMarkdownDocument(_ sender: Any?) {
-        guard let document = try? makeUntitledDocument(ofType: Document.markdown) else { return }
+    @objc func newTextDocument(_ sender: Any?) {
+        guard let document = try? makeUntitledDocument(ofType: Document.plain) else { return }
         addDocument(document)
         document.makeWindowControllers()
         document.showWindows()
@@ -262,7 +266,10 @@ enum Session {
         return directory.appendingPathComponent("session.json")
     }
 
+    private static var quitting = false
+
     static func save() {
+        guard !quitting else { return }   // AppKit closes the documents while quitting; a later save would write an empty session
         let items = NSDocumentController.shared.documents.compactMap { ($0 as? Document)?.sessionItem }
         try? JSONEncoder().encode(items).write(to: url, options: .atomic)
     }
@@ -271,6 +278,7 @@ enum Session {
     static func saveForQuit() {
         guard !Settings.startNew else { return }
         save()
+        quitting = true
         NSDocumentController.shared.documents.forEach { $0.updateChangeCount(.changeCleared) }
     }
 
@@ -280,9 +288,14 @@ enum Session {
         var restored = false
         for item in items {
             if let path = item.path, FileManager.default.fileExists(atPath: path) {
-                controller.openDocument(withContentsOf: URL(fileURLWithPath: path), display: true) { document, _, _ in
-                    (document as? Document)?.restoreSession(item)
-                }
+                // made by hand: openDocument finishes later, which would put file tabs after the unsaved ones
+                let url = URL(fileURLWithPath: path)
+                guard let type = try? controller.typeForContents(of: url),
+                      let document = try? controller.makeDocument(withContentsOf: url, ofType: type) as? Document else { continue }
+                controller.addDocument(document)
+                document.makeWindowControllers()
+                document.showWindows()
+                document.restoreSession(item)
                 restored = true
             } else if item.text != nil, let document = (try? controller.openUntitledDocumentAndDisplay(true)) as? Document {
                 document.restoreSession(item)

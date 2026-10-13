@@ -63,17 +63,22 @@ func menuItem(_ title: String, _ action: Selector?, _ key: String = "", _ modifi
 private func functionKey(_ key: Int) -> String { String(utf16CodeUnits: [unichar(key)], count: 1) }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private lazy var settingsWindow = SettingsWindowController()
+    private weak var settingsTab: EditorWindowController?
     private var sessionRestored: Bool?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Settings.register()
+        NSWindow.allowsAutomaticWindowTabbing = false   // tabs are the editor's own, see TabGroup
         NSApp.mainMenu = buildMenu()
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme), name: UserDefaults.didChangeNotification, object: nil)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // AppKit adds its own "Open Recent" next to Open...; the Recent menu built below replaces it
+        if let file = NSApp.mainMenu?.item(at: 1)?.submenu {
+            file.items.filter { $0.submenu != nil && $0.title != L("Recent") }.forEach(file.removeItem)
+        }
         _ = restoreSession()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -108,7 +113,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Settings and font
 
-    @objc func showSettings(_ sender: Any?) { settingsWindow.showWindow(sender) }
+    /// Settings open as a tab, like Notepad's; asking again goes back to that tab.
+    @objc func showSettings(_ sender: Any?) {
+        if let settingsTab { return settingsTab.select() }
+        let tab = EditorWindowController()
+        tab.showSettings()
+        if let active = EditorWindowController.active { tab.join(active) }
+        settingsTab = tab
+        tab.select()
+    }
 
     @objc func showFonts(_ sender: Any?) {
         let manager = NSFontManager.shared
@@ -176,10 +189,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let recent = submenu(L("Recent"), [])
         recent.submenu?.delegate = self
+        // T works wherever N does; a menu item holds one shortcut, so a hidden twin carries the second
+        func twin(_ item: NSMenuItem) -> NSMenuItem {
+            let twin = menuItem(item.title, item.action, "t", item.keyEquivalentModifierMask, target: item.target)
+            twin.isHidden = true
+            twin.allowsKeyEquivalentWhenHidden = true
+            return twin
+        }
+        // new tabs are Markdown; the Shift variant makes a plain text one
+        let newTab = menuItem(L("New tab"), #selector(NSDocumentController.newDocument(_:)), "n")
+        let newTextTab = menuItem(L("New text tab"), #selector(DocumentController.newTextDocument(_:)), "n", shift, target: documents)
         main.addItem(submenu(L("File"), [
-            menuItem(L("New tab"), #selector(NSDocumentController.newDocument(_:)), "n"),
-            menuItem(L("New Markdown tab"), #selector(DocumentController.newMarkdownDocument(_:)), target: documents),
-            menuItem(L("New window"), #selector(DocumentController.newWindowDocument(_:)), "n", shift, target: documents),
+            newTab, twin(newTab), newTextTab, twin(newTextTab),
+            menuItem(L("New window"), #selector(DocumentController.newWindowDocument(_:)), target: documents),
             menuItem(L("Open..."), #selector(NSDocumentController.openDocument(_:)), "o"),
             recent,
             .separator(),
@@ -247,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let window = submenu(L("Window"), [
             menuItem(L("Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
             .separator(),
+            menuItem(L("Next tab"), #selector(EditorWindowController.cycleTab(_:)), "\t", .control, tag: 1),
+            menuItem(L("Previous tab"), #selector(EditorWindowController.cycleTab(_:)), "\t", [.control, .shift], tag: -1),
             menuItem(L("Close other tabs"), #selector(EditorWindowController.closeOtherTabs(_:))),
             menuItem(L("Close tabs to the right"), #selector(EditorWindowController.closeTabsToRight(_:))),
         ])
@@ -256,53 +280,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-final class SettingsWindowController: NSWindowController {
+/// The settings page shown in a tab: titled sections of rounded cards.
+final class SettingsView: NSStackView {
     private let fontButton = NSButton(title: "", target: nil, action: #selector(AppDelegate.showFonts(_:)))
 
+    override var isFlipped: Bool { true }   // so the scroll view starts at the top
+
     init() {
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
-        window.title = L("Settings")
-        super.init(window: window)
+        super.init(frame: .zero)
 
         let defaults = NSUserDefaultsController.shared
-        func check(_ title: String, _ key: String) -> NSButton {
-            let button = NSButton(checkboxWithTitle: title, target: nil, action: nil)
-            button.bind(.value, to: defaults, withKeyPath: "values." + key)
-            return button
+        func toggle(_ key: String) -> NSSwitch {
+            let toggle = NSSwitch()
+            toggle.bind(.value, to: defaults, withKeyPath: "values." + key)
+            return toggle
         }
         func popup(_ titles: [String], _ key: String) -> NSPopUpButton {
             let popup = NSPopUpButton()
             popup.addItems(withTitles: titles)
+            popup.isBordered = false
             popup.bind(.selectedIndex, to: defaults, withKeyPath: "values." + key)
             return popup
         }
-        func label(_ text: String) -> NSTextField { NSTextField(labelWithString: text) }
+        // one setting: icon, name, optional explanation, control at the right edge
+        func row(_ symbol: String, _ title: String, _ detail: String? = nil, _ control: NSControl) -> NSView {
+            let icon = NSImageView(image: symbolImage(symbol))
+            icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            icon.contentTintColor = .labelColor
+            icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            let labels = NSStackView(views: [NSTextField(labelWithString: title)])
+            labels.orientation = .vertical
+            labels.alignment = .leading
+            labels.spacing = 2
+            if let detail {
+                let text = NSTextField(labelWithString: detail)
+                text.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+                text.textColor = .secondaryLabelColor
+                labels.addArrangedSubview(text)
+            }
+            control.setAccessibilityLabel(title)
+            let row = NSStackView()
+            row.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+            row.spacing = 12
+            row.addView(icon, in: .leading)
+            row.addView(labels, in: .leading)
+            row.addView(control, in: .trailing)
+            row.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+            return row
+        }
+        // a titled group of settings on one rounded card, like the sections of Notepad's settings page
+        func section(_ title: String, _ rows: [NSView]) -> [NSView] {
+            let header = NSTextField(labelWithString: title)
+            header.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+            let list = NSStackView()
+            list.orientation = .vertical
+            list.alignment = .trailing
+            list.spacing = 0
+            for (index, row) in rows.enumerated() {
+                if index > 0 {
+                    let line = NSBox()
+                    line.boxType = .separator
+                    list.addArrangedSubview(line)
+                    line.widthAnchor.constraint(equalTo: list.widthAnchor, constant: -54).isActive = true   // starts under the names, not the icons
+                }
+                list.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
+            }
+            let card = NSBox()
+            card.boxType = .custom
+            card.cornerRadius = 10
+            card.borderWidth = 0
+            card.fillColor = .controlBackgroundColor
+            card.contentViewMargins = .zero
+            card.addSubview(list)
+            list.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                list.topAnchor.constraint(equalTo: card.topAnchor), list.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+                list.leadingAnchor.constraint(equalTo: card.leadingAnchor), list.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            ])
+            return [header, card]
+        }
 
-        let grid = NSGridView(views: [
-            [label(L("App theme")), popup([L("Use system setting"), L("Light"), L("Dark")], "theme")],
-            [label(L("Font")), fontButton],
-            [label(L("Word wrap")), check(L("Fit text within window by default"), "wordWrap")],
-            [label(L("Formatting")), check(L("Formatting"), "formatting")],
-            [label(L("Opening files")), popup([L("Open in a new tab"), L("Open in a new window")], "openInNewWindow")],
-            [label(L("When Notepad starts")), popup([L("Continue previous session"), L("Start new session and discard unsaved changes")], "startNew")],
-            [label(L("Recent Files")), check(L("Recent Files"), "recentFiles")],
-            [label(L("Spelling")), check(L("Spell check"), "spellCheck")],
-            [label(""), check(L("Autocorrect"), "autocorrect")],
-        ])
-        grid.column(at: 0).xPlacement = .trailing
-        grid.rowSpacing = 10
-        grid.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
-        content.addSubview(grid)
-        NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
-            grid.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
-            grid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            grid.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-        ])
-        window.contentView = content
-        window.setContentSize(content.fittingSize)
-        window.center()
+        fontButton.isBordered = false
+        fontButton.image = symbolImage("chevron.right")
+        fontButton.imagePosition = .imageTrailing
+        fontButton.contentTintColor = .secondaryLabelColor
+        let heading = NSTextField(labelWithString: L("Settings"))
+        heading.font = .systemFont(ofSize: 26, weight: .bold)
+        let page = self
+        ([heading] +
+            section(L("Appearance"), [
+                row("circle.lefthalf.filled", L("App theme"), nil, popup([L("Use system setting"), L("Light"), L("Dark")], "theme")),
+            ]) + section(L("Text formatting"), [
+                row("textformat", L("Font"), nil, fontButton),
+                row("arrow.turn.down.left", L("Word wrap"), L("Fit text within window by default"), toggle("wordWrap")),
+                row("bold.italic.underline", L("Formatting"), nil, toggle("formatting")),
+            ]) + section(L("Opening Notepad"), [
+                row("doc", L("Opening files"), nil, popup([L("Open in a new tab"), L("Open in a new window")], "openInNewWindow")),
+                row("arrow.counterclockwise", L("When Notepad starts"), nil,
+                    popup([L("Continue previous session"), L("Start new session and discard unsaved changes")], "startNew")),
+                row("clock", L("Recent Files"), nil, toggle("recentFiles")),
+            ]) + section(L("Spelling"), [
+                row("textformat.abc.dottedunderline", L("Spell check"), nil, toggle("spellCheck")),
+                row("wand.and.stars", L("Autocorrect"), nil, toggle("autocorrect")),
+            ])).forEach(page.addArrangedSubview)
+        page.orientation = .vertical
+        page.alignment = .leading
+        page.spacing = 8
+        page.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        page.setCustomSpacing(20, after: heading)
+        for (index, view) in page.arrangedSubviews.enumerated().dropFirst() {
+            if index % 2 == 0 {
+                view.widthAnchor.constraint(equalTo: page.widthAnchor, constant: -48).isActive = true   // cards span the tab, less the side margins
+                page.setCustomSpacing(20, after: view)
+            } else {
+                page.setCustomSpacing(8, after: view)
+            }
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(showFont), name: UserDefaults.didChangeNotification, object: nil)
         showFont()
