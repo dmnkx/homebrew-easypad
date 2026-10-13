@@ -1,0 +1,14 @@
+name: build
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - run: sh scripts/bundle.sh
+      - run: ditto -c -k --keepParent build/Notepad.app Notepad.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Notepad
+          path: Notepad.zip

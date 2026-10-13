@@ -1,0 +1,5 @@
+.build/
+build/
+# string dumps extracted from the installed Windows Notepad
+re/*.txt
+re/*.json
