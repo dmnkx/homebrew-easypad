@@ -35,7 +35,7 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
     var baseFont = Settings.font
 
     var doc: Document? { document as? Document }
-    var storage: NSTextStorage { textView.textStorage! }
+    let storage: NSTextStorage   // owns the text system; the text view alone would not keep it alive
     var bodyAttrs: Attrs { [.font: baseFont, .foregroundColor: NSColor.textColor] }
 
     /// The document text as it would be saved.
@@ -49,9 +49,10 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
 
     init() {
         // TextKit 1 on purpose: NSTextTable only works there
-        let storage = NSTextStorage(), layout = NSLayoutManager()
+        let text = NSTextStorage(), layout = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        storage.addLayoutManager(layout)
+        text.addLayoutManager(layout)
+        storage = text
         layout.addTextContainer(container)
         textView = NSTextView(frame: .zero, textContainer: container)
 

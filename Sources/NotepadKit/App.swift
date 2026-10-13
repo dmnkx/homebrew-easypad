@@ -84,7 +84,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Session.saveForQuit()
-        return .terminateNow
+        let documents = NSDocumentController.shared
+        guard documents.hasEditedDocuments else { return .terminateNow }
+        documents.reviewUnsavedDocuments(withAlertTitle: nil, cancellable: true, delegate: self,
+                                         didReviewAllSelector: #selector(documentController(_:didReviewAll:contextInfo:)), contextInfo: nil)
+        return .terminateLater
+    }
+
+    @objc private func documentController(_ controller: NSDocumentController, didReviewAll: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        NSApp.reply(toApplicationShouldTerminate: didReviewAll)
     }
 
     /// Reopens last session's tabs once; true if there was anything to reopen.
