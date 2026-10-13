@@ -1,6 +1,6 @@
 # PROCESS — EasyPad (Windows 11 메모장 macOS 포팅)
 
-마지막 갱신: 2026-10-13
+마지막 갱신: 2026-10-14
 
 ## 1. 목적
 
@@ -255,6 +255,12 @@ sh scripts/release.sh 1.2  # 버전을 올려 빌드, 푸시, GitHub Releases �
 | 33 | 작업 중 질문: "`brew install --cask dmnkx/notepad` 이렇게는 안 돼?" | 두 부분짜리 이름은 Homebrew가 tap으로 해석해서 안 된다. `--cask` 없이 `brew install dmnkx/easypad/easypad`가 가장 짧은 한 줄이고, `brew tap dmnkx/easypad` 뒤에는 `brew install easypad`만으로 된다고 답했다. |
 
 이 날 작업에서 확인하지 못한 것: 다크 모드, 전체 화면, 창을 아주 좁혔을 때의 탭 줄, 창이 활성/비활성일 때 각각의 색 일치(라이트 모드 한 상태에서만 측정), 설정 탭의 나머지 스위치·팝업과 글꼴 버튼, 설정 탭만 남기고 다른 탭을 모두 닫았을 때의 동작.
+
+### 2026-10-14 (맥)
+
+| # | 사용자 지시 | 한 일 |
+|---|---|---|
+| 34 | (32번의 마무리) | 커밋 `b236394`(이름 변경, cask, 릴리스 스크립트, README)를 올리고 `sh scripts/release.sh 1.1`로 `v1.1`을 냈다(`f3b2749`). 확인함: `brew install dmnkx/easypad/easypad`로 tap 등록과 설치가 되고, `/Applications/EasyPad.app`에 격리 표시가 붙지 않으며, 설치된 앱이 차단 없이 실행된다. CI도 성공. cask의 설치 후 단계는 Homebrew가 요구하는 새 문법(`postflight_steps`)으로 썼다. |
 
 ---
 
