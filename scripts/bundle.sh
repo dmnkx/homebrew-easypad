@@ -1,13 +1,13 @@
 #!/bin/sh
-# Builds build/Notepad.app (universal, ad-hoc signed). Run on macOS with Xcode command line tools.
+# Builds build/EasyPad.app (universal, ad-hoc signed). Run on macOS with Xcode command line tools.
 set -e
 cd "$(dirname "$0")/.."
 swift build -c release --arch arm64 --arch x86_64
 BIN=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
-APP=build/Notepad.app
+APP=build/EasyPad.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp "$BIN/Notepad" "$APP/Contents/MacOS/"
+cp "$BIN/Notepad" "$APP/Contents/MacOS/EasyPad"   # the SwiftPM product keeps its old name
 cp Info.plist "$APP/Contents/"
 # empty .lproj folders make AppKit show its own panels (Save, Print, Fonts) in Korean too
 for lang in en ko; do

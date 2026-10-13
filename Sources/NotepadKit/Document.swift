@@ -150,7 +150,7 @@ final class Document: NSDocument {
         let grid = NSGridView(views: rows.map { [NSTextField(labelWithString: $0.0), field($0.1)] })
         grid.frame.size = grid.fittingSize
         let controller = NSViewController()
-        controller.title = L("Notepad")
+        controller.title = "EasyPad"
         controller.view = grid
         pageLayout.addAccessoryController(controller)
         return true
@@ -261,7 +261,7 @@ struct SessionItem: Codable {
 /// Notepad keeps open tabs and unsaved text across launches without touching the files.
 enum Session {
     static var url: URL {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Notepad")
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("EasyPad")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("session.json")
     }

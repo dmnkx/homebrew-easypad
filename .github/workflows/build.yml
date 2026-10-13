@@ -12,8 +12,8 @@ jobs:
         run: |
           msg=$(grep -E "error:|failed|XCTAssert" build.log | sort -u | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=build log::$msg"
-      - run: ditto -c -k --keepParent build/Notepad.app Notepad.zip
+      - run: ditto -c -k --keepParent build/EasyPad.app EasyPad.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: Notepad
-          path: Notepad.zip
+          name: EasyPad
+          path: EasyPad.zip

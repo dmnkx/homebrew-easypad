@@ -8,8 +8,8 @@ func L(_ english: String) -> String { isKorean ? korean[english] ?? english : en
 private let korean: [String: String] = [
     // menus
     "File": "파일", "Edit": "편집", "View": "보기", "Format": "서식", "Window": "윈도우",
-    "About Notepad": "메모장 정보", "Settings...": "설정...", "Hide Notepad": "메모장 가리기", "Hide Others": "기타 가리기",
-    "Show All": "모두 보기", "Quit Notepad": "메모장 종료",
+    "About EasyPad": "EasyPad 정보", "Settings...": "설정...", "Hide EasyPad": "EasyPad 가리기", "Hide Others": "기타 가리기",
+    "Show All": "모두 보기", "Quit EasyPad": "EasyPad 종료",
     "New tab": "새 탭", "New text tab": "새 텍스트 탭", "New window": "새 창", "Open...": "열기...", "Recent": "최근",
     "No recent files": "최근 파일 없음", "Clear list": "목록 지우기", "Save": "저장", "Save as...": "다른 이름으로 저장...",
     "Save all": "모두 저장", "Page setup...": "페이지 설정...", "Print...": "인쇄...", "Close tab": "탭 닫기", "Close window": "창 닫기",
@@ -27,13 +27,13 @@ private let korean: [String: String] = [
     "Insert from this device": "이 장치에서 삽입", "Insert via link": "링크를 통해 삽입",
     "Minimize": "최소화", "Next tab": "다음 탭", "Previous tab": "이전 탭", "Close other tabs": "다른 탭 닫기", "Close tabs to the right": "탭을 오른쪽으로 닫기",
     // dialogs
-    "OK": "확인", "Cancel": "취소", "Insert": "삽입", "Notepad": "메모장", "Untitled": "제목 없음",
+    "OK": "확인", "Cancel": "취소", "Insert": "삽입", "Untitled": "제목 없음",
     "Go to line": "줄로 이동", "Line number": "줄 번호", "The line number is beyond the total number of lines": "줄 번호가 전체 줄 수를 넘습니다.",
     "Display text": "텍스트 표시", "Address": "주소", "Insert image": "이미지 삽입",
     "Number of rows": "행 개수", "Number of columns": "열 개수",
     "This link might be unsafe": "이 링크는 안전하지 않을 수 있음", "Open link": "링크 열기",
-    "You're about to open a link that hasn't been verified.\nOpening this link will take you outside of Notepad.\n\nOnly continue if you're sure this link is safe.":
-        "확인되지 않은 링크를 열려고 합니다.\n이 링크를 열면 메모장 외부로 이동합니다.\n\n이 링크가 안전한 경우에만 계속하세요.",
+    "You're about to open a link that hasn't been verified.\nOpening this link will take you outside of EasyPad.\n\nOnly continue if you're sure this link is safe.":
+        "확인되지 않은 링크를 열려고 합니다.\n이 링크를 열면 EasyPad 외부로 이동합니다.\n\n이 링크가 안전한 경우에만 계속하세요.",
     "Save as Markdown to keep formatting": "서식을 유지하려면 Markdown으로 저장",
     "This is a text file. To keep the current formatting, like bolding and headings, save it as a Markdown file (.md).":
         "텍스트 파일입니다. 굵게 및 제목 등의 현재 서식을 유지하려면 Markdown 파일(.md)로 저장합니다.",
@@ -47,9 +47,9 @@ private let korean: [String: String] = [
     " Ln %d, Col %d": " 줄 %d, 열 %d", "%d characters": "%d자", "%d of %d characters": "%d/%d자",
     "Plain text": "일반 텍스트", "Markdown syntax": "Markdown 구문",
     // settings
-    "Settings": "설정", "Appearance": "모양", "Text formatting": "텍스트 서식", "Opening Notepad": "메모장 열기", "App theme": "앱 테마", "Use system setting": "시스템 설정 사용", "Light": "밝게", "Dark": "어둡게", "Font": "글꼴",
+    "Settings": "설정", "Appearance": "모양", "Text formatting": "텍스트 서식", "Opening EasyPad": "EasyPad 열기", "App theme": "앱 테마", "Use system setting": "시스템 설정 사용", "Light": "밝게", "Dark": "어둡게", "Font": "글꼴",
     "Fit text within window by default": "기본적으로 창 안에 텍스트 맞춤", "Formatting": "서식", "Opening files": "파일 열기",
-    "Open in a new tab": "새 탭에서 열기", "Open in a new window": "새 창에서 열기", "When Notepad starts": "메모장 시작 시",
+    "Open in a new tab": "새 탭에서 열기", "Open in a new window": "새 창에서 열기", "When EasyPad starts": "EasyPad 시작 시",
     "Continue previous session": "이전 세션 계속하기",
     "Start new session and discard unsaved changes": "새 세션을 시작하고 저장되지 않은 변경 내용 버리기",
     "Recent Files": "최근에 사용한 파일", "Spelling": "맞춤법", "Spell check": "맞춤법 검사", "Autocorrect": "자동 수정",

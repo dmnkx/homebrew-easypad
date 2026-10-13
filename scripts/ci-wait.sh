@@ -1,6 +1,6 @@
 #!/bin/sh
 # Waits for the latest Actions run of this repo and prints its result and error annotations.
-REPO=dmnkx/notepad-mac
+REPO=dmnkx/homebrew-easypad
 API=https://api.github.com/repos/$REPO
 sha=$(git rev-parse HEAD)
 while :; do

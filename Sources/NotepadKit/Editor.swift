@@ -332,7 +332,7 @@ final class EditorWindowController: NSWindowController, NSTextViewDelegate, NSMe
         let address = (link as? URL)?.absoluteString ?? "\(link)"
         let alert = NSAlert()
         alert.messageText = L("This link might be unsafe")
-        alert.informativeText = L("You're about to open a link that hasn't been verified.\nOpening this link will take you outside of Notepad.\n\nOnly continue if you're sure this link is safe.") + "\n\n" + address
+        alert.informativeText = L("You're about to open a link that hasn't been verified.\nOpening this link will take you outside of EasyPad.\n\nOnly continue if you're sure this link is safe.") + "\n\n" + address
         alert.addButton(withTitle: L("Open link"))
         alert.addButton(withTitle: L("Cancel"))
         if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: address) { NSWorkspace.shared.open(url) }

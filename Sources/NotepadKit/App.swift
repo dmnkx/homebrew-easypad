@@ -176,15 +176,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let option: NSEvent.ModifierFlags = [.command, .option], shift: NSEvent.ModifierFlags = [.command, .shift]
 
         main.addItem(submenu("", [
-            menuItem(L("About Notepad"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            menuItem(L("About EasyPad"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
             menuItem(L("Settings..."), #selector(showSettings(_:)), ",", target: self),
             .separator(),
-            menuItem(L("Hide Notepad"), #selector(NSApplication.hide(_:)), "h"),
+            menuItem(L("Hide EasyPad"), #selector(NSApplication.hide(_:)), "h"),
             menuItem(L("Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h", option),
             menuItem(L("Show All"), #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            menuItem(L("Quit Notepad"), #selector(NSApplication.terminate(_:)), "q"),
+            menuItem(L("Quit EasyPad"), #selector(NSApplication.terminate(_:)), "q"),
         ]))
 
         let recent = submenu(L("Recent"), [])
@@ -375,9 +375,9 @@ final class SettingsView: NSStackView {
                 row("textformat", L("Font"), nil, fontButton),
                 row("arrow.turn.down.left", L("Word wrap"), L("Fit text within window by default"), toggle("wordWrap")),
                 row("bold.italic.underline", L("Formatting"), nil, toggle("formatting")),
-            ]) + section(L("Opening Notepad"), [
+            ]) + section(L("Opening EasyPad"), [
                 row("doc", L("Opening files"), nil, popup([L("Open in a new tab"), L("Open in a new window")], "openInNewWindow")),
-                row("arrow.counterclockwise", L("When Notepad starts"), nil,
+                row("arrow.counterclockwise", L("When EasyPad starts"), nil,
                     popup([L("Continue previous session"), L("Start new session and discard unsaved changes")], "startNew")),
                 row("clock", L("Recent Files"), nil, toggle("recentFiles")),
             ]) + section(L("Spelling"), [

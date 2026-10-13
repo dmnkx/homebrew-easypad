@@ -1,4 +1,4 @@
-# PROCESS — Windows 11 메모장 macOS 포팅
+# PROCESS — EasyPad (Windows 11 메모장 macOS 포팅)
 
 마지막 갱신: 2026-10-13
 
@@ -24,14 +24,16 @@ Windows 11 기본 메모장(스토어판 `Microsoft.WindowsNotepad` 11.2607.14.0
 | 항목 | 상태 |
 |---|---|
 | 소스 작성 | 완료 (Swift 약 1,900줄) |
-| 저장소 | `git@github.com:dmnkx/notepad-mac.git`, 공개 저장소, `main` 브랜치 |
+| 저장소 | `git@github.com:dmnkx/homebrew-easypad.git`(2026-10-13에 `notepad-mac`에서 이름 변경, 예전 주소는 GitHub가 넘겨 준다), 공개 저장소, `main` 브랜치. Homebrew tap을 겸한다 |
+| 앱 이름 | EasyPad (번들 ID `io.github.dmnkx.easypad`). SwiftPM 타깃 이름(`Notepad`, `NotepadKit`)은 그대로다 |
+| 설치 | `brew install dmnkx/easypad/easypad` |
 | CI 1회차 (`f287253`) | 실패, `swift test` 단계 |
 | CI 2회차 (`69355cc`) | 실패. 오류 1건 확인: `main.swift`에서 `@MainActor` 함수 `runApp()` 호출 불가 |
 | CI 3회차 (`8e0f412`) | 성공. `swift test`, `.app` 번들, 아티팩트 업로드까지 통과 |
 | 테스트 | 6개 통과 (인코딩·줄 끝, 머리글/바닥글 코드, Markdown 왕복, 탭 묶음, 표 격자, 이미지 폴더 복사) |
 | 맥 로컬 빌드 | `swift test`, `sh scripts/bundle.sh` 통과. x86_64 폐기 예정 경고 1건 |
 | 2026-10-13 맥 작업 | 커밋 `eb67c1f`로 `main`에 들어 있고 푸시했다(9절) |
-| 산출물 | Actions 실행의 아티팩트 `Notepad` (`Notepad.zip` 안에 `Notepad.app`) |
+| 산출물 | GitHub Releases의 `EasyPad.zip`(`sh scripts/release.sh <버전>`으로 올린다). Actions 실행의 아티팩트 `EasyPad`에도 매번 올라간다. `v1.0`은 이름을 바꾸기 전의 `Notepad.zip`이다 |
 | 실제 동작 확인 | 탭, 창 안 메뉴, 설정 창 열기, 세션 저장/복원은 확인. 나머지는 6.1절 |
 
 화면과 동작에 관한 코드는 탭 묶음 말고는 테스트가 없다. 6.1절에서 "확인함" 표시가 없는 항목은 미검증이다.
@@ -136,9 +138,10 @@ gh auth login              # 전체 로그가 필요하면 (gh run view --log-fa
 ### 맥에서 직접 빌드
 
 ```sh
-git clone git@github.com:dmnkx/notepad-mac.git && cd notepad-mac
+git clone git@github.com:dmnkx/homebrew-easypad.git && cd homebrew-easypad
 swift test
-sh scripts/bundle.sh       # build/Notepad.app 생성
+sh scripts/bundle.sh       # build/EasyPad.app 생성
+sh scripts/release.sh 1.2  # 버전을 올려 빌드, 푸시, GitHub Releases 업로드, cask 갱신까지
 ```
 
 ## 6. 수정해야 할 내역
@@ -204,7 +207,8 @@ sh scripts/bundle.sh       # build/Notepad.app 생성
 
 ## 8. 주의할 점
 
-- **저장소가 공개다.** 소스의 `L10n.swift`에는 원본 메모장의 한국어 UI 문구가 들어 있다. 비공개로 바꿀지 판단이 필요하다.
+- **저장소가 공개다.** 앱 이름은 EasyPad로 바꿨지만, 소스의 `L10n.swift`에는 원본 메모장의 한국어 UI 문구가 여전히 들어 있다.
+- **Homebrew cask**: `Casks/easypad.rb`. 앱이 공증받지 않았기 때문에 설치 직후 격리 표시를 떼는 단계(`postflight_steps`의 `xattr`)가 들어 있다. Homebrew가 이 방식을 막으면 Apple 개발자 계정으로 서명·공증해야 한다.
 - **서명**: 임시(ad-hoc) 서명이라 내려받은 앱은 처음 열 때 우클릭 → 열기를 하거나 `xattr -dr com.apple.quarantine Notepad.app`을 실행해야 한다.
 - **단축키와 일부 동작은 원본에서 확인한 값이 아니다.** 4.2절 참고. Windows에서 원본을 실행해 대조하면 정확해진다.
 
@@ -245,6 +249,10 @@ sh scripts/bundle.sh       # build/Notepad.app 생성
 | 27 | "앱 아이콘 넣어놨어. a_clean 어쩌구 파일이야" | 사용자가 넣은 `a_clean_app_icon_style_graphic_illustration_on_a.png`(1254×1254, 투명 배경)를 `AppIcon.png`로 이름을 바꾸고 앱 아이콘으로 연결했다. `scripts/bundle.sh`가 `sips`와 `iconutil`로 `AppIcon.icns`(16~1024px)를 만들어 번들에 넣고, `Info.plist`에 `CFBundleIconFile`을 추가했다. `build/Notepad.zip`도 다시 만들었다. |
 | 28 | "지금까지 작업한 내용 커밋해줘" | 1~27번 작업을 브랜치 `mac-ui-pass`에 한 커밋으로 올렸다. `main`에서 바로 커밋하지 않고 브랜치를 만든 것이며, 푸시는 하지 않았다. |
 | 29 | "main 브랜치에 합치고 푸시해줘" | `mac-ui-pass`를 `main`에 fast-forward로 합치고 `origin/main`에 푸시했다. 브랜치는 지웠다. |
+| 30 | "다른 사람에게 전달하기 가장 좋은 방법은?" → `gh` 로그인 → "응 올려줘" | GitHub Releases에 `v1.0`을 만들고 `Notepad.zip`(2.6MB, `main`의 `a959ad5`에서 빌드)을 올렸다. https://github.com/dmnkx/notepad-mac/releases/tag/v1.0 릴리스 설명에 설치 방법과, 공증받지 않은 앱이라 처음 열 때 필요한 절차(시스템 설정의 "그래도 열기" 또는 `xattr`)를 적었다. 서명은 여전히 임시(ad-hoc)다. |
+| 31 | "brew로 설치할 수 있도록 하고 싶은데 서명이 필요한가?" → "내 레포를 확인해줄래?" | 코드 변경 없음. 공식 cask는 서명·공증이 필요하지만 개인 tap은 필요 없다고 답했다. 사용자의 `homebrew-sssh`, `homebrew-myip`를 읽어 보니 저장소 하나가 소스이자 tap이고 Releases의 바이너리를 가리키는 방식이었다. |
+| 32 | "앱이름을 easypad로 바꾸고 1번으로 해줘" (1번 = 저장소 이름을 `homebrew-`로 바꿔 tap으로 쓰기) | 앱 이름을 EasyPad로 바꿨다: `Info.plist`(이름, 실행 파일, 번들 ID), 메뉴·설정·경고 문구, 세션 폴더(`Application Support/EasyPad`), `bundle.sh`, CI, `ci-wait.sh`. 표시 이름의 대소문자는 "EasyPad"로 정했다(사용자는 "easypad"라고 적음). SwiftPM 타깃 이름은 그대로 뒀다. 저장소를 `homebrew-easypad`로 이름 변경. `Casks/easypad.rb`, `scripts/release.sh`, `README.md` 추가. 이 맥의 기존 설정과 세션은 새 이름으로 옮겼다. |
+| 33 | 작업 중 질문: "`brew install --cask dmnkx/notepad` 이렇게는 안 돼?" | 두 부분짜리 이름은 Homebrew가 tap으로 해석해서 안 된다. `--cask` 없이 `brew install dmnkx/easypad/easypad`가 가장 짧은 한 줄이고, `brew tap dmnkx/easypad` 뒤에는 `brew install easypad`만으로 된다고 답했다. |
 
 이 날 작업에서 확인하지 못한 것: 다크 모드, 전체 화면, 창을 아주 좁혔을 때의 탭 줄, 창이 활성/비활성일 때 각각의 색 일치(라이트 모드 한 상태에서만 측정), 설정 탭의 나머지 스위치·팝업과 글꼴 버튼, 설정 탭만 남기고 다른 탭을 모두 닫았을 때의 동작.
 
