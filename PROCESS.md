@@ -261,6 +261,7 @@ sh scripts/release.sh 1.2  # 버전을 올려 빌드, 푸시, GitHub Releases �
 | # | 사용자 지시 | 한 일 |
 |---|---|---|
 | 34 | (32번의 마무리) | 커밋 `b236394`(이름 변경, cask, 릴리스 스크립트, README)를 올리고 `sh scripts/release.sh 1.1`로 `v1.1`을 냈다(`f3b2749`). 확인함: `brew install dmnkx/easypad/easypad`로 tap 등록과 설치가 되고, `/Applications/EasyPad.app`에 격리 표시가 붙지 않으며, 설치된 앱이 차단 없이 실행된다. CI도 성공. cask의 설치 후 단계는 Homebrew가 요구하는 새 문법(`postflight_steps`)으로 썼다. |
+| 35 | "README.md 파일을 작성해줘. 공개 문서이니 자세한 설명과 설치, 사용법, 삭제 방법 등을" | `README.md`(영어)와 `README.ko.md`(한국어)를 썼다. 사용자의 `homebrew-myip` 저장소와 같은 두 언어 구성이다. 내용: 소개(Microsoft와 무관하다는 점 포함), 주요 기능, 요구 사항, 설치(Homebrew, 직접 내려받기와 공증 관련 절차), 사용법(탭, 파일, Markdown 서식, 편집·보기 단축키 표, 설정), 업데이트, 삭제(`--zap`, 수동 삭제 경로), 알려진 한계, 소스 빌드. 샘플 문서를 띄운 창을 찍어 `docs/screenshot.png`로 넣었다. |
 
 ---
 
