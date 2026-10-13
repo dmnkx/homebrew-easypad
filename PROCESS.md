@@ -30,7 +30,7 @@ Windows 11 기본 메모장(스토어판 `Microsoft.WindowsNotepad` 11.2607.14.0
 | CI 3회차 (`8e0f412`) | 성공. `swift test`, `.app` 번들, 아티팩트 업로드까지 통과 |
 | 테스트 | 6개 통과 (인코딩·줄 끝, 머리글/바닥글 코드, Markdown 왕복, 탭 묶음, 표 격자, 이미지 폴더 복사) |
 | 맥 로컬 빌드 | `swift test`, `sh scripts/bundle.sh` 통과. x86_64 폐기 예정 경고 1건 |
-| 2026-10-13 맥 작업 | 브랜치 `mac-ui-pass`에 한 커밋으로 들어 있다(9절). `main`에는 아직 합치지 않았고 푸시도 하지 않았다 |
+| 2026-10-13 맥 작업 | 커밋 `eb67c1f`로 `main`에 들어 있고 푸시했다(9절) |
 | 산출물 | Actions 실행의 아티팩트 `Notepad` (`Notepad.zip` 안에 `Notepad.app`) |
 | 실제 동작 확인 | 탭, 창 안 메뉴, 설정 창 열기, 세션 저장/복원은 확인. 나머지는 6.1절 |
 
@@ -110,7 +110,7 @@ SwiftPM 패키지, 라이브러리 타깃 `NotepadKit`에 모든 코드를 두�
 | `69355cc` | CI가 빌드 오류를 주석(annotation)으로 노출 |
 | `8e0f412` | 진입점을 `@main @MainActor`로 변경 (CI 2회차 오류 수정) |
 | `98e8d88` | 이 문서 추가 |
-| `mac-ui-pass` 브랜치 | 2026-10-13 맥 작업 전체. 9절 참고 |
+| `eb67c1f` | 2026-10-13 맥 작업 전체: 창 모양을 원본에 맞춤, 직접 그린 탭, 설정 탭, 첫 실행에서 나온 버그 수정, 앱 아이콘. 9절 참고 |
 
 ## 5. 작업할 내역
 
@@ -212,7 +212,7 @@ sh scripts/bundle.sh       # build/Notepad.app 생성
 
 **규칙**: 작업할 때마다 사용자가 지시한 내용과 그에 따라 한 일을 이 절에 덧붙인다(2026-10-13 사용자 지시). 위쪽 절의 내용이 바뀌면 그 절도 같이 고친다.
 
-### 2026-10-13 (맥, 브랜치 `mac-ui-pass`)
+### 2026-10-13 (맥, 커밋 `eb67c1f`)
 
 | # | 사용자 지시 | 한 일 |
 |---|---|---|
@@ -244,6 +244,7 @@ sh scripts/bundle.sh       # build/Notepad.app 생성
 | 26 | "app파일로 아카이빙 할 수 있어?" | 코드 변경 없음. `.app`은 `sh scripts/bundle.sh`가 이미 `build/Notepad.app`으로 만든다(유니버설, 임시 서명). 배포용으로 `ditto -c -k --keepParent build/Notepad.app build/Notepad.zip`으로 압축했다(405KB). `build/`는 `.gitignore` 대상이라 저장소에는 올라가지 않는다. |
 | 27 | "앱 아이콘 넣어놨어. a_clean 어쩌구 파일이야" | 사용자가 넣은 `a_clean_app_icon_style_graphic_illustration_on_a.png`(1254×1254, 투명 배경)를 `AppIcon.png`로 이름을 바꾸고 앱 아이콘으로 연결했다. `scripts/bundle.sh`가 `sips`와 `iconutil`로 `AppIcon.icns`(16~1024px)를 만들어 번들에 넣고, `Info.plist`에 `CFBundleIconFile`을 추가했다. `build/Notepad.zip`도 다시 만들었다. |
 | 28 | "지금까지 작업한 내용 커밋해줘" | 1~27번 작업을 브랜치 `mac-ui-pass`에 한 커밋으로 올렸다. `main`에서 바로 커밋하지 않고 브랜치를 만든 것이며, 푸시는 하지 않았다. |
+| 29 | "main 브랜치에 합치고 푸시해줘" | `mac-ui-pass`를 `main`에 fast-forward로 합치고 `origin/main`에 푸시했다. 브랜치는 지웠다. |
 
 이 날 작업에서 확인하지 못한 것: 다크 모드, 전체 화면, 창을 아주 좁혔을 때의 탭 줄, 창이 활성/비활성일 때 각각의 색 일치(라이트 모드 한 상태에서만 측정), 설정 탭의 나머지 스위치·팝업과 글꼴 버튼, 설정 탭만 남기고 다른 탭을 모두 닫았을 때의 동작.
 
